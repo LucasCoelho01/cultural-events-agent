@@ -25,7 +25,7 @@ Ver `proposal.md` para a motivação e os requisitos em `specs/`.
 
 ## Decisions
 
-**Layout.** Pacote `cultural_events_agent` com `config.py`, `errors.py`, `logging.py`, `db.py`, `llm.py` e `cli.py`; `pyproject.toml` aponta o script para `cultural_events_agent.cli:main`. *Alternativa:* subpacotes por camada; descartada, pois são poucos arquivos.
+**Layout.** Pacote `cultural_events_agent` com `config.py`, `errors.py`, `logs.py`, `db.py`, `llm.py` e `cli.py`; `pyproject.toml` aponta o script para `cultural_events_agent.cli:main`. *Alternativa:* subpacotes por camada; descartada, pois são poucos arquivos.
 
 **Erros.** `errors.py` define `AgentError(code, message)` e subclasses `ConfigInvalid`, `DbUnavailable`, `SchemaContractMismatch`, `DbContractViolation`, `LlmUnavailable`. Cada classe carrega seu `code` (o nome em maiúsculas dos specs) e seu código de saída (2, 3, 4, 1 e 5; `DB_CONTRACT_VIOLATION` sai com 1, por ser um erro de programação ou permissão, não de ambiente). A tradução para o processo fica só no `cli.py`.
 
@@ -35,7 +35,7 @@ Ver `proposal.md` para a motivação e os requisitos em `specs/`.
 
 **Banco.** psycopg 3 síncrono, uma `Connection` por execução, com `autocommit` desligado e `commit()` explícito em cada função de escrita. O módulo `db.py` expõe `connect(settings)`, `check_schema_contract(conn)`, `open_run(conn, source_id) -> int` e `close_run(conn, run_id, status, counts, errors)`. Todo SQL usa placeholders `%s` com a lista de parâmetros, e `errors` vai como `Jsonb(...)`; nenhum valor entra no texto do SQL. Tipos: `RunStatus` (`StrEnum` com `SUCCESS|PARTIAL|FAILED`), `RunCounts` (modelo pydantic com `ge=0`) e `RunError` (`external_id`, `message`).
 
-**Respeito ao AGENT_CONTRACT.md.** Lê só `schema_contract`; escreve só `ingestion_run`, nos moldes da seção 3 do contrato (`INSERT ... RETURNING id` e um único `UPDATE` ao fechar). A checagem usa a consulta da seção 2, comparando só o MAJOR (MINOR maior é aceito). `psycopg.OperationalError` vira `DbUnavailable`; `ForeignKeyViolation` (`23503`), `CheckViolation` (`23514`) e `InsufficientPrivilege` (`42501`) viram `DbContractViolation`. Nada disso exige permissão nova da `agent_writer`.
+**Respeito ao AGENT_CONTRACT.md.** Lê só `schema_contract`; escreve só `ingestion_run`, nos moldes da seção 3 do contrato (`INSERT ... RETURNING id` e um único `UPDATE` ao fechar). A checagem usa a consulta da seção 2, comparando só o MAJOR (MINOR maior é aceito). `psycopg.OperationalError` vira `DbUnavailable`; `ForeignKeyViolation` (`23503`), `CheckViolation` (`23514`), `InsufficientPrivilege` (`42501`), `NotNullViolation` (`23502`), `UniqueViolation` (`23505`), `UndefinedTable` (`42P01`) e `UndefinedColumn` (`42703`) viram `DbContractViolation`. Nada disso exige permissão nova da `agent_writer`.
 
 **Fechamento único.** O `UPDATE` leva `WHERE id = %s AND status = 'RUNNING'`; se afetar 0 linhas, levanta `DbContractViolation`. O status é validado pelo `RunStatus` antes de ir ao banco. Assim, fechar duas vezes não sobrescreve o resultado.
 
@@ -43,7 +43,7 @@ Ver `proposal.md` para a motivação e os requisitos em `specs/`.
 
 **CLI.** `argparse` (sem dependência nova), subcomando `check` e a flag `--skip-llm`. Os erros passam por um único `try/except AgentError` em `main`, que loga e devolve o código de saída; `Exception` genérica sai com 1. A função `run_check(settings, llm_factory)` recebe dependências por argumento, para ser testável.
 
-**Logs.** `logging` da stdlib com um `Formatter` que emite JSON por linha no `stderr` (`timestamp`, `level`, `event`, `error_code`, extras). Um filtro mascara a chave de API e a senha do banco conhecidas nas mensagens. *Alternativa:* structlog; descartada para não somar dependência fora da lista.
+**Logs.** Módulo `logs.py` (nome que não sombreia o `logging` da stdlib), que usa o `logging` da stdlib com um `Formatter` que emite JSON por linha no `stderr` (`timestamp`, `level`, `event`, `error_code`, extras). O próprio `Formatter` mascara a chave de API e a senha do banco conhecidas, só quando têm 8 ou mais caracteres (`MIN_SECRET_LENGTH`): mascarar um segredo curto como `abc` corromperia texto comum. A config sinaliza os segredos menores com um WARNING `CONFIG_WEAK_SECRET` (`Settings.weak_secret_names()`, emitido pela CLI), sem o valor. As mensagens de erro de conexão (`db.py`) e do provedor (`llm.py`) continuam mascarando qualquer tamanho, pois montam texto a partir de erros externos. *Alternativa:* structlog; descartada para não somar dependência fora da lista.
 
 **Testes.** `tests/conftest.py` sobe `PostgresContainer("postgres:16")` por sessão e aplica os `.sql` de `MIGRATIONS_DIR` em ordem numérica do prefixo `V<n>` (e não só lexicográfica), com o usuário administrador do contêiner. Se o diretório não existir, a fixture chama `pytest.skip` com mensagem que cita o caminho esperado e a variável `MIGRATIONS_DIR`. Cada teste usa uma conexão com `SET ROLE agent_writer`; o teste de contrato 2.0 insere a linha `2.0` como administrador antes do `SET ROLE` e a remove no fim, pois a role não escreve em `schema_contract`. Cada teste de escrita roda em transação revertida ou limpa suas linhas. Os testes de configuração não usam Docker e rodam sempre.
 
@@ -54,4 +54,5 @@ Ver `proposal.md` para a motivação e os requisitos em `specs/`.
 - [`SET ROLE` só prova as permissões se o login for superusuário do contêiner] → aceito; o teste de `42501` confirma que a role realmente é restrita.
 - [Erro de contrato sobre um MAJOR futuro quebra todos os agentes de uma vez] → é o comportamento desejado pelo contrato (seção 2).
 - [`LLM_UNAVAILABLE` não estava na lista original de erros] → adicionado para a chamada do `check`; sem ele, essa falha cairia no código genérico 1.
+- [Segredo curto passa sem máscara em texto livre dos logs] → nenhum caminho do código loga o valor (a URL do banco sai mascarada e as mensagens de erro são filtradas na origem); o aviso `CONFIG_WEAK_SECRET` incentiva segredos fortes.
 - [Chamada real do `check` custa tokens] → uma chamada mínima e `--skip-llm` para o dia a dia.

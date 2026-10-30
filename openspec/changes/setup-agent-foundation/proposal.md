@@ -7,7 +7,7 @@ O projeto tem só o esqueleto do `uv init`. Antes de qualquer fonte, o agente pr
 ## What Changes
 
 - Declarar as dependências de runtime (langchain, langchain-anthropic, langgraph, psycopg[binary] 3, pydantic, pydantic-settings, httpx, playwright) e de desenvolvimento (pytest, ruff, testcontainers[postgres]) com `uv`.
-- Configuração tipada lida do `.env` (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `USER_AGENT`, `REQUEST_DELAY_SECONDS`), com falha `CONFIG_INVALID` que não expõe segredos, e `.env.example` versionado.
+- Configuração tipada lida do `.env` (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `USER_AGENT`, `REQUEST_DELAY_SECONDS`), com falha `CONFIG_INVALID` que não expõe segredos, aviso `CONFIG_WEAK_SECRET` para segredos curtos (menos de 8 caracteres) e `.env.example` versionado.
 - Módulo de banco: conexão psycopg, checagem do `schema_contract` na partida (`SCHEMA_CONTRACT_MISMATCH`, `DB_UNAVAILABLE`) e funções tipadas, com SQL parametrizado, para abrir e fechar um `ingestion_run`.
 - Fábrica do LLM atrás de uma interface, para os testes usarem um modelo falso.
 - Comando `uv run cultural-events-agent check` com códigos de saída distintos por erro e logs estruturados.
