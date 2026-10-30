@@ -1,0 +1,61 @@
+schema: spec-driven
+
+context: |
+  Agente de ingestão de eventos culturais em Python 3.13 (uv; pacote
+  src/cultural_events_agent). Coleta páginas de fontes culturais, extrai
+  eventos com um LLM e grava direto no Postgres do app cultural-events-app.
+
+  Stack:
+  - LangChain/LangGraph com Claude via langchain-anthropic. O modelo é
+    configurável por ANTHROPIC_MODEL; o padrão é claude-sonnet-5-5.
+  - Playwright para páginas que dependem de JavaScript.
+  - psycopg 3 para Postgres; pydantic para os modelos.
+  - pytest e ruff.
+
+  Contrato com o banco:
+  - O banco pertence ao repo cultural-events-app. O agente segue
+    database/AGENT_CONTRACT.md daquele repo (contrato de schema 1.0) e
+    conecta com a role agent_writer.
+  - Não duplicar nem alterar o schema aqui. Se o contrato mudar, a
+    mudança é feita no outro repo e este projeto se adapta.
+
+  Regras do projeto:
+  - Escrever todos os artefatos (proposal, design, specs, tasks) em português.
+  - O LLM apenas extrai dados em formato estruturado (saída validada por
+    pydantic). O LLM nunca gera SQL.
+  - Toda escrita no banco passa por código tipado com SQL parametrizado.
+    Nunca montar SQL por concatenação ou f-string.
+  - Respeitar robots.txt de cada fonte e limitar a taxa de requisições
+    (por domínio).
+  - Segredos ficam só em .env, que não é versionado. O .env.example é
+    versionado e lista todas as variáveis, sem valores reais.
+  - Testes de banco usam Testcontainers (Postgres) e aplicam as migrations
+    do repo cultural-events-app. Não usar mocks para a camada de banco.
+
+rules:
+  proposal:
+    - Declarar o que está fora de escopo
+    - Indicar se a mudança afeta o contrato de schema 1.0 ou as permissões da role agent_writer
+  specs:
+    - Cada requisito tem no máximo 500 caracteres
+    - Usar SHALL/MUST nos requisitos e manter o texto em português
+    - Todo requisito tem ao menos um cenário de sucesso e um cenário de erro
+    - Cenários de erro citam um código de erro explícito (ex. ROBOTS_DISALLOWED, EXTRACTION_INVALID, DB_CONTRACT_VIOLATION)
+    - Requisitos de extração nunca permitem que o LLM produza SQL
+  design:
+    - Descrever como a mudança respeita o AGENT_CONTRACT.md (tabelas, colunas e permissões usadas)
+    - Descrever como a escrita no banco permanece tipada e parametrizada
+    - Informar variáveis de ambiente novas e atualizar o .env.example
+  tasks:
+    - Incluir testes com pytest; testes de banco usam Testcontainers com as migrations do cultural-events-app
+    - Incluir a verificação com ruff (check e format)
+    - Tarefas pequenas e verificáveis, uma por vez
+
+operations:
+  apply:
+    guidance:
+      - Rodar pytest e ruff antes de marcar uma tarefa como concluída
+      - Nunca commitar .env nem segredos
+  archive:
+    guidance:
+      - Resumir o resultado do arquivamento antes de finalizar

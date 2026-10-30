@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Ambiente
+.venv/
+.env
+.env.*
+!.env.example
+
+# Playwright
+.playwright/
+test-results/
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
