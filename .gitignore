@@ -25,3 +25,6 @@ test-results/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Respostas brutas do modelo (LOG_LEVEL=DEBUG)
+.debug/

@@ -15,6 +15,9 @@ ENV_VARS = [
     "ANTHROPIC_MODEL",
     "USER_AGENT",
     "REQUEST_DELAY_SECONDS",
+    "REQUEST_TIMEOUT_SECONDS",
+    "MAX_PAGES_PER_RUN",
+    "LOG_LEVEL",
 ]
 
 
@@ -158,3 +161,60 @@ def test_segredos_fortes_nao_geram_aviso(env_minimo):
 def test_url_sem_senha_nao_gera_aviso(env_minimo, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db")
     assert load_settings(env_file=None).weak_secret_names() == []
+
+
+def test_limites_de_coleta_padroes(env_minimo):
+    settings = load_settings(env_file=None)
+    assert settings.request_timeout_seconds == 30
+    assert settings.max_pages_per_run == 50
+
+
+def test_limites_de_coleta_sobrescritos(env_minimo, monkeypatch):
+    monkeypatch.setenv("REQUEST_TIMEOUT_SECONDS", "5.5")
+    monkeypatch.setenv("MAX_PAGES_PER_RUN", "7")
+    settings = load_settings(env_file=None)
+    assert settings.request_timeout_seconds == 5.5
+    assert settings.max_pages_per_run == 7
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("MAX_PAGES_PER_RUN", "0"),
+        ("MAX_PAGES_PER_RUN", "abc"),
+        ("REQUEST_TIMEOUT_SECONDS", "0"),
+        ("REQUEST_TIMEOUT_SECONDS", "-1"),
+        ("REQUEST_TIMEOUT_SECONDS", "nan"),
+    ],
+)
+def test_limite_de_coleta_invalido(env_minimo, monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ConfigInvalid) as exc:
+        load_settings(env_file=None)
+    assert name in exc.value.message
+    assert value not in exc.value.message or value == "0"
+
+
+def test_env_example_lista_os_limites_de_coleta():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "REQUEST_TIMEOUT_SECONDS=" in text
+    assert "MAX_PAGES_PER_RUN=" in text
+
+
+def test_log_level_padrao_e_normalizado(env_minimo, monkeypatch):
+    assert load_settings(env_file=None).log_level == "INFO"
+    monkeypatch.setenv("LOG_LEVEL", "debug")
+    settings = load_settings(env_file=None)
+    assert settings.log_level == "DEBUG"
+    assert settings.log_level_number == 10
+
+
+def test_log_level_invalido(env_minimo, monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "barulhento")
+    with pytest.raises(ConfigInvalid) as exc:
+        load_settings(env_file=None)
+    assert "LOG_LEVEL" in exc.value.message
+
+
+def test_env_example_lista_log_level():
+    assert "LOG_LEVEL=" in (ROOT / ".env.example").read_text(encoding="utf-8")

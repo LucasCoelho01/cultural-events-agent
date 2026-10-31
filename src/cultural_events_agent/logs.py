@@ -39,6 +39,8 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = self._scrub(
                     value if isinstance(value, int | float | bool) else str(value)
                 )
+        if record.exc_info:
+            payload["traceback"] = self._scrub(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=True)
 
 
