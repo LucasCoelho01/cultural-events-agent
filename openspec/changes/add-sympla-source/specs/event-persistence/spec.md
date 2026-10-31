@@ -1,19 +1,34 @@
 ## ADDED Requirements
 
 ### Requirement: Idempotência por vínculo e hash
-Cada item MUST calcular `content_hash` (SHA-256 do JSON canônico do item normalizado, incluindo categoria, local e sessões) e procurar o vínculo `(source_id, external_id)` com `FOR UPDATE`. Sem vínculo: cria. Hash igual: só atualiza `last_seen_at` e `last_run_id`, e conta em `unchanged`. Hash diferente: atualiza e conta em `updated`.
+Cada item MUST ter um `content_hash` (SHA-256 em hex) calculado sobre os dados brutos da fonte (`__NEXT_DATA__` do evento, JSON-LD e texto da seção de ingressos), normalizados de forma determinística, antes de qualquer chamada ao modelo. Com o vínculo `(source_id, external_id)` lido com `FOR UPDATE`: sem vínculo, cria; hash igual, só atualiza `last_seen_at` e `last_run_id`, conta em `unchanged` e não chama o modelo; hash diferente, atualiza e conta em `updated`.
 
 #### Scenario: Primeira execução
 - **WHEN** o item não tem vínculo
-- **THEN** são criados evento, sessões e vínculo, com `status = 'PUBLISHED'` e `origin = 'AGENT'`, e conta em `created`
+- **THEN** o modelo é chamado, são criados evento, sessões e vínculo (com `status = 'PUBLISHED'` e `origin = 'AGENT'`), e conta em `created`
 
 #### Scenario: Segunda execução sem mudança
-- **WHEN** o mesmo item é processado de novo com o mesmo conteúdo
-- **THEN** nada muda no evento, `last_seen_at` e `last_run_id` são atualizados e conta em `unchanged`
+- **WHEN** o mesmo item é processado de novo com os mesmos dados brutos
+- **THEN** o modelo não é chamado, nada muda no evento, `last_seen_at` e `last_run_id` são atualizados e conta em `unchanged`
 
 #### Scenario: Mudança de preço
-- **WHEN** o preço mínimo do item muda
-- **THEN** o evento é atualizado, `version` sobe 1 e conta em `updated`
+- **WHEN** o texto da seção de ingressos muda o preço mínimo
+- **THEN** o hash muda, o modelo é chamado, o evento é atualizado, `version` sobe 1 e conta em `updated`
+
+### Requirement: Hash estável sobre dados brutos
+A normalização do hash MUST usar uma lista fixa de campos relevantes ao conteúdo, ordenar chaves, normalizar espaços e entidades HTML, e incluir uma versão da regra. Campos voláteis ou de rastreio (integrações, visitas recentes, parâmetros de URL) MUST NOT entrar no hash.
+
+#### Scenario: Campo volátil muda
+- **WHEN** só um campo ignorado muda entre duas execuções (ex.: `cardPreviousView`)
+- **THEN** o hash é o mesmo e o item conta em `unchanged`
+
+#### Scenario: Espaços e entidades
+- **WHEN** a descrição difere só por espaços extras ou `&nbsp;`
+- **THEN** o hash é o mesmo
+
+#### Scenario: Seção de ingressos ausente
+- **WHEN** a página não tem a seção de ingressos
+- **THEN** o hash usa texto vazio nessa parte e um aviso `pricing_section_missing` é logado
 
 ### Requirement: Uma transação por evento
 Cada item MUST ser gravado em uma transação própria: local, evento, sessões e vínculo juntos. Qualquer falha MUST fazer rollback do item inteiro, registrá-lo em `errors` e `failed`, e seguir. Nenhuma transação MUST cobrir a execução toda.
@@ -69,3 +84,14 @@ Toda escrita MUST usar SQL parametrizado em funções tipadas; o modelo MUST NOT
 #### Scenario: Slug duplicado na cidade
 - **WHEN** `event_city_slug_key` rejeita o evento com `23505`
 - **THEN** o item falha com `DB_CONTRACT_VIOLATION` e a execução segue
+
+### Requirement: Evento gravado reclassificado como não cultural
+Se um evento já gravado passar a ser classificado como não cultural, o agente MUST NOT apagá-lo, despublicá-lo nem alterá-lo (nem o vínculo): MUST apenas registrar o aviso `existing_event_not_cultural` com o `event_id` e o motivo, para decisão humana.
+
+#### Scenario: Reclassificação
+- **WHEN** o conteúdo de um evento publicado muda e o modelo o classifica como não cultural
+- **THEN** o evento segue `PUBLISHED`, com a mesma `version`, e o log traz `existing_event_not_cultural` com o `event_id`
+
+#### Scenario: Evento novo não cultural
+- **WHEN** um item sem vínculo é classificado como não cultural
+- **THEN** nenhum aviso `existing_event_not_cultural` é emitido

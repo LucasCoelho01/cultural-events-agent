@@ -88,3 +88,79 @@ def source_id(admin_conn) -> int:
 
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture
+def make_settings():
+    """Fábrica de Settings de teste, sem ler .env."""
+    from cultural_events_agent.config import Settings
+
+    def factory(**extra) -> Settings:
+        values = {
+            "database_url": "postgresql://u:senha-do-banco-1234@localhost/db",
+            "anthropic_api_key": "sk-ant-chave-secreta-1234",
+            "user_agent": "cultural-events-agent/0.1 (teste@example.com)",
+            "request_delay_seconds": 2,
+        }
+        values.update(extra)
+        return Settings(_env_file=None, **values)
+
+    return factory
+
+
+FIXTURES = ROOT / "tests" / "fixtures" / "sympla"
+
+
+@pytest.fixture
+def sympla_html():
+    """Lê uma fixture HTML da Sympla pelo nome do arquivo."""
+
+    def read(name: str) -> str:
+        return (FIXTURES / name).read_text(encoding="utf-8")
+
+    return read
+
+
+@pytest.fixture
+def writer_conn(postgres) -> Iterator[psycopg.Connection]:
+    """agent_writer em autocommit: cada `conn.transaction()` é um BEGIN/COMMIT de verdade."""
+    with psycopg.connect(**postgres, autocommit=True) as conn:
+        conn.execute("SET ROLE agent_writer")
+        yield conn
+
+
+_CLEAN_SQL = [
+    "DELETE FROM event_source_link",
+    "DELETE FROM occurrence",
+    "DELETE FROM event",
+    "DELETE FROM venue",
+    "DELETE FROM ingestion_run",
+    "DELETE FROM source WHERE code <> 'sympla'",
+    "DELETE FROM city WHERE slug = 'rio-de-janeiro'",
+]
+
+
+@pytest.fixture
+def clean_db(admin_conn):
+    """Zera os dados de eventos antes e depois (mantém source 'sympla', cidades e categorias)."""
+    for sql in _CLEAN_SQL:
+        admin_conn.execute(sql)
+    yield
+    for sql in _CLEAN_SQL:
+        admin_conn.execute(sql)
+
+
+@pytest.fixture
+def city_id(admin_conn, clean_db) -> int:
+    return admin_conn.execute(
+        "SELECT id FROM city WHERE state_uf = 'SP' AND slug = 'sao-paulo'"
+    ).fetchone()[0]
+
+
+@pytest.fixture
+def inactive_city_id(admin_conn, clean_db) -> int:
+    return admin_conn.execute(
+        "INSERT INTO city (ibge_code, state_uf, name, slug, timezone, active) "
+        "VALUES (3304557, 'RJ', 'Rio de Janeiro', 'rio-de-janeiro', 'America/Sao_Paulo', false) "
+        "RETURNING id"
+    ).fetchone()[0]

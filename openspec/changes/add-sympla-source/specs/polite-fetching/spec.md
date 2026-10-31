@@ -43,3 +43,29 @@ O acesso à rede MUST ficar atrás de uma interface de busca de páginas, de mod
 #### Scenario: Busca falsa
 - **WHEN** um teste injeta uma busca que serve fixtures HTML
 - **THEN** o fluxo roda sem abrir socket
+
+### Requirement: Resposta 429 do servidor
+Resposta HTTP 429 MUST gerar `RATE_LIMITED` sem esperar o fim do carregamento da página, e o domínio MUST esperar antes do próximo pedido: o `Retry-After` (máximo 120 s) ou, sem ele, 30 s dobrando a cada 429 seguido. Três páginas seguidas com `RATE_LIMITED` MUST interromper a execução com `RATE_LIMITED`, fechando o `ingestion_run` como `FAILED`; o restante fica pendente.
+
+#### Scenario: Retry-After
+- **WHEN** o servidor responde 429 com `Retry-After: 45`
+- **THEN** o item falha com `RATE_LIMITED` e o próximo pedido ao domínio espera 45 s
+
+#### Scenario: Sem Retry-After
+- **WHEN** o servidor responde 429 três vezes seguidas sem `Retry-After`
+- **THEN** as esperas são 30 s, 60 s e 120 s, e a execução é interrompida com `RATE_LIMITED`
+
+#### Scenario: Página que nunca fica ociosa
+- **WHEN** a página de 429 (ou com rastreadores) nunca atinge `networkidle`
+- **THEN** o 429 é detectado em segundos, sem consumir o timeout
+
+#### Scenario: Sucesso zera a sequência
+- **WHEN** uma página é baixada com sucesso entre dois 429
+- **THEN** a contagem de 429 seguidos recomeça do primeiro
+
+### Requirement: Navegador resiliente
+Erro inesperado do navegador (ex.: `TargetClosedError`) MUST descartar o navegador, e o próximo evento MUST abrir um novo, sem contaminar as páginas seguintes.
+
+#### Scenario: Navegador fechado
+- **WHEN** o navegador cai durante uma página
+- **THEN** o item falha com `FETCH_FAILED` e o evento seguinte é baixado num navegador novo

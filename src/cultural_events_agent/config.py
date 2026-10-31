@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
@@ -9,6 +10,12 @@ from cultural_events_agent.logs import MIN_SECRET_LENGTH
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
 MASK = "***"
+LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 
 class Settings(BaseSettings):
@@ -24,6 +31,21 @@ class Settings(BaseSettings):
     anthropic_model: str = Field(default=DEFAULT_MODEL, min_length=1)
     user_agent: str = Field(min_length=1)
     request_delay_seconds: float = Field(default=2, ge=0, allow_inf_nan=False)
+    request_timeout_seconds: float = Field(default=30, gt=0, allow_inf_nan=False)
+    max_pages_per_run: int = Field(default=50, ge=1)
+    log_level: str = "INFO"
+
+    @field_validator("log_level")
+    @classmethod
+    def _log_level_known(cls, value: str) -> str:
+        level = value.strip().upper()
+        if level not in LOG_LEVELS:
+            raise ValueError("deve ser DEBUG, INFO, WARNING ou ERROR")
+        return level
+
+    @property
+    def log_level_number(self) -> int:
+        return LOG_LEVELS[self.log_level]
 
     @field_validator("database_url")
     @classmethod
@@ -72,7 +94,9 @@ class Settings(BaseSettings):
         return (
             f"Settings(database_url={self.database_url_masked!r}, anthropic_api_key={MASK!r}, "
             f"anthropic_model={self.anthropic_model!r}, user_agent={self.user_agent!r}, "
-            f"request_delay_seconds={self.request_delay_seconds!r})"
+            f"request_delay_seconds={self.request_delay_seconds!r}, "
+            f"request_timeout_seconds={self.request_timeout_seconds!r}, "
+            f"max_pages_per_run={self.max_pages_per_run!r})"
         )
 
     __str__ = __repr__

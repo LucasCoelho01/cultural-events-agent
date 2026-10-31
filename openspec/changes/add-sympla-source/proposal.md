@@ -12,6 +12,8 @@ A fundação do agente já conecta, confere o contrato e registra execuções, m
 - Extração em camadas: JSON-LD `Event` e `__NEXT_DATA__` primeiro; o Claude completa e normaliza o que faltar. Saída inválida vira `EXTRACTION_INVALID` só daquele item.
 - `LlmClient` ganha saída estruturada (`with_structured_output` + modelo pydantic); `FakeLlm` acompanha.
 - Mapeamento: categoria por slug entre as do banco (fallback `outros`); local por `similarity()` na cidade, criando o `venue` se não existir.
+- `content_hash` sobre os dados brutos da fonte (`__NEXT_DATA__`, JSON-LD e texto de ingressos), normalizados antes de qualquer chamada ao modelo: hash igual = `unchanged` sem chamar o LLM.
+- Eventos cuja palavra `teste` aparece no título ou no slug são `skipped`, com o motivo no log.
 - Gravação conforme o `AGENT_CONTRACT.md`: `content_hash`, uma transação por evento, upsert por `(source_id, external_id)`, `locked_fields`, lápides, `version = version + 1`, deduplicação entre fontes e contadores em `ingestion_run`.
 - CLI `run --source sympla --city sp/sao-paulo [--limit N] [--dry-run]`. O `--dry-run` extrai e mostra o resultado sem gravar nada.
 - Novas variáveis `REQUEST_TIMEOUT_SECONDS` e `MAX_PAGES_PER_RUN` (e no `.env.example`); novos códigos de erro e de saída.
@@ -39,5 +41,5 @@ Não há **BREAKING**: o comando `check` e os códigos 0–5 e 64 não mudam. Es
 - Dependências: nenhuma nova (httpx, playwright, langgraph e langchain-anthropic já estão no `pyproject.toml`).
 - Banco: leitura de `source`, `city`, `category`, `venue`, `event`, `occurrence`; escrita nas tabelas permitidas à role. Sem migration.
 - Rede: a Sympla (listagem por `httpx`, eventos por Playwright). Os testes não usam rede.
-- Custo: uma chamada ao modelo por evento novo ou alterado; ver o risco de reextração no design.
+- Custo: uma chamada ao modelo só por evento novo ou com dados brutos alterados; o item inalterado custa apenas o download.
 - Fora de escopo: outras fontes, agendamento e tela de monitoramento.
