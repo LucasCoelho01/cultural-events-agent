@@ -85,6 +85,13 @@ _DUPLICATE_SQL = """
      ORDER BY similarity(e.title, %s) DESC, e.id
      LIMIT 1
 """
+# Seção 8: só o dono atualiza o evento: origin = 'AGENT' e o vínculo mais antigo é desta fonte.
+_OWNER_SQL = """
+    SELECT e.origin = 'AGENT'
+           AND (SELECT l.source_id FROM event_source_link l
+                 WHERE l.event_id = e.id ORDER BY l.id LIMIT 1) = %s
+      FROM event e WHERE e.id = %s
+"""
 
 
 class Outcome(StrEnum):
@@ -127,6 +134,12 @@ def find_duplicate(
     return row[0] if row else None
 
 
+def owns_event(conn: psycopg.Connection, source_id: int, event_id: int) -> bool:
+    """A primeira fonte é a dona (contrato §8): evento do agente cujo vínculo mais antigo é este."""
+    row = conn.execute(_OWNER_SQL, (source_id, event_id)).fetchone()
+    return bool(row and row[0])
+
+
 def plan_item(
     conn: psycopg.Connection,
     *,
@@ -143,6 +156,8 @@ def plan_item(
         duplicate = find_duplicate(conn, source_id, city_id, mapped.event.title, first)
         return "link_existing" if duplicate else "create"
     if link.is_tombstone or link.content_hash == raw_hash:
+        return "unchanged"
+    if not owns_event(conn, source_id, link.event_id):
         return "unchanged"
     return "update"
 
@@ -167,6 +182,12 @@ def write_item(
             return Outcome.UNCHANGED
         if current.content_hash == raw_hash:
             conn.execute(_TOUCH_LINK_SQL, (run_id, current.id))
+            return Outcome.UNCHANGED
+        if not owns_event(conn, source_id, current.event_id):
+            # Vínculo por deduplicação: o evento é de outra fonte ou do admin; só o vínculo anda.
+            conn.execute(
+                _FINISH_LINK_SQL, (raw_hash, item.url, run_id, source_id, item.external_id)
+            )
             return Outcome.UNCHANGED
         _update(conn, source_id, run_id, item, raw_hash, mapped, current.event_id, city_id)
         return Outcome.UPDATED

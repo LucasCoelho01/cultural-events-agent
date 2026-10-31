@@ -16,7 +16,7 @@
 
 - [x] 3.1 Criar `fetching.py` com a interface `PageFetcher` e o ritmo por domínio (relógio injetável): pausa de `REQUEST_DELAY_SECONDS`, `USER_AGENT` em toda requisição e `FetchFailed` em timeout ou HTTP de erro
 - [x] 3.2 Implementar a leitura do `robots.txt` uma vez por domínio (4xx permite, 5xx ou rede proíbe) e a checagem por URL com `RobotsDisallowed`
-- [x] 3.3 Implementar `HttpxPlaywrightFetcher`: listagem por `httpx`, evento por Playwright com um navegador reaproveitado, ambos com `REQUEST_TIMEOUT_SECONDS`, e o contador de `MAX_PAGES_PER_RUN`
+- [x] 3.3 Implementar `HttpxPlaywrightFetcher`: listagem por `httpx`, evento por Playwright com um navegador reaproveitado (`close` fecha context, browser e playwright cada um no seu try e zera as referências), ambos com `REQUEST_TIMEOUT_SECONDS`, e o contador de `MAX_PAGES_PER_RUN`
 - [x] 3.4 Testes sem rede (servidor `httpx.MockTransport` e relógio falso): robots proíbe, robots 404, robots 503, pausa entre requisições, cabeçalho `User-Agent`, timeout e limite de páginas
 
 ## 4. Fixtures da Sympla
@@ -52,9 +52,9 @@
 
 - [x] 8.1 Criar `writer.py` com a busca do vínculo (lida na triagem e repetida com `FOR UPDATE` na gravação: lápide, sem vínculo, hash igual, hash diferente), o `touch` de `last_seen_at`/`last_run_id` e o hash dos dados brutos gravado no vínculo, com SQL parametrizado
 - [x] 8.2 Implementar a criação: venue, evento `PUBLISHED`/`AGENT`, sessões e vínculo, numa transação por item, com rollback e `DbContractViolation` por item
-- [x] 8.3 Implementar a deduplicação entre fontes (`similarity` ≥ 0,6, janela de 1 dia): só o vínculo, sem sobrescrever o evento existente
+- [x] 8.3 Implementar a deduplicação entre fontes (`similarity` ≥ 0,6, janela de 1 dia): só o vínculo, sem sobrescrever o evento existente; atualização e `--dry-run` só para o dono (`origin = 'AGENT'` e vínculo mais antigo desta fonte), senão só o vínculo anda
 - [x] 8.4 Implementar a atualização: colunas não travadas, `version = version + 1 … WHERE version`, sessões por `ON CONFLICT` e `DELETE … <> ALL`, `occurrences` travado preserva as sessões, até 3 tentativas e `VersionConflict`
-- [x] 8.5 Testes com Testcontainers como `agent_writer`: criar, repetir sem mudança (`unchanged`), mudança de preço no texto de ingressos (`updated`, `version` +1), `title` travado, `occurrences` travado, lápide (nada criado), rollback do item inteiro, dois itens independentes, dedupe entre fontes e `23505` em `event_city_slug_key`
+- [x] 8.5 Testes com Testcontainers como `agent_writer`: criar, repetir sem mudança (`unchanged`), mudança de preço no texto de ingressos (`updated`, `version` +1), `title` travado, `occurrences` travado, lápide (nada criado), rollback do item inteiro, dois itens independentes, dedupe entre fontes `23505` em `event_city_slug_key`, e evento admin/de outra fonte vinculado por duplicata intacto quando o hash muda
 
 ## 9. Grafo e execução
 

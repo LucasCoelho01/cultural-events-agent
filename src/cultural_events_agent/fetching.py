@@ -108,10 +108,7 @@ class PlaywrightRenderer:
 
     def _restart(self) -> None:
         """Descarta o navegador; o próximo `render` abre um novo."""
-        try:
-            self.close()
-        except Exception:
-            self._playwright = self._browser = self._context = None
+        self.close()
 
     @staticmethod
     def _wait_for_content(page, timeout_seconds: float) -> None:
@@ -126,11 +123,20 @@ class PlaywrightRenderer:
             pass  # evento sem ingressos à venda: o aviso pricing_section_missing cobre o caso
 
     def close(self) -> None:
-        if self._browser is not None:
-            self._browser.close()
-        if self._playwright is not None:
-            self._playwright.stop()
+        """Cada recurso é fechado no seu try: uma falha não deixa o Playwright rodando."""
+        resources = (
+            (self._context, "close"),
+            (self._browser, "close"),
+            (self._playwright, "stop"),
+        )
         self._playwright = self._browser = self._context = None
+        for resource, method in resources:
+            if resource is None:
+                continue
+            try:
+                getattr(resource, method)()
+            except Exception:  # o navegador pode já ter caído
+                pass
 
 
 class PoliteFetcher:

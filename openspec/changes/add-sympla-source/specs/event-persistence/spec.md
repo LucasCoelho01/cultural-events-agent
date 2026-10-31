@@ -78,6 +78,10 @@ Antes de criar, o agente MUST procurar evento da mesma cidade com `similarity(ti
 - **WHEN** nenhum evento da cidade atinge o limiar na janela de 1 dia
 - **THEN** o evento é criado normalmente
 
+#### Scenario: Hash muda num vínculo que não é dono do evento
+- **WHEN** o hash muda e o evento é do admin (`origin = 'MANUAL'`) ou o vínculo mais antigo (menor `id`) é de outra fonte
+- **THEN** o evento não é alterado, só `content_hash`, `external_url`, `last_seen_at` e `last_run_id` do vínculo, e o item conta em `unchanged` (no `--dry-run`, ação `unchanged`)
+
 ### Requirement: Escrita tipada e parametrizada
 Toda escrita MUST usar SQL parametrizado em funções tipadas; o modelo MUST NOT gerar SQL. Violação de constraint (`23514`, `23505` em `event_city_slug_key`) MUST falhar só o item, com `DB_CONTRACT_VIOLATION`.
 

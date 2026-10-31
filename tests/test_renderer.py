@@ -103,3 +103,64 @@ def test_apos_um_erro_do_navegador_o_proximo_render_reabre_o_navegador(renderer,
         renderer.render(f"{servidor}/ok", 15)
     assert renderer._context is None  # foi descartado
     assert "R$ 10,00" in renderer.render(f"{servidor}/ok", 15)  # reabre sozinho
+
+
+def test_close_com_falha_no_meio_nao_deixa_o_playwright_rodando(monkeypatch):
+    """browser.close() lança: o playwright ainda é parado e o próximo render funciona."""
+    eventos = []
+
+    class Resposta:
+        status = 200
+        headers = {}
+
+    class Pagina:
+        def goto(self, *args, **kwargs):
+            return Resposta()
+
+        def wait_for_selector(self, *args, **kwargs):
+            pass
+
+        def content(self):
+            return "<html>ok</html>"
+
+        def close(self):
+            pass
+
+    class Contexto:
+        def new_page(self):
+            return Pagina()
+
+        def close(self):
+            eventos.append("context")
+
+    class Navegador:
+        def new_context(self, **kwargs):
+            return Contexto()
+
+        def close(self):
+            eventos.append("browser")
+            raise RuntimeError("navegador já caiu")
+
+    class Playwright:
+        def __init__(self):
+            self.chromium = self
+
+        def launch(self):
+            return Navegador()
+
+        def stop(self):
+            eventos.append("playwright")
+
+    class Gerenciador:
+        def start(self):
+            return Playwright()
+
+    import playwright.sync_api as sync_api
+
+    monkeypatch.setattr(sync_api, "sync_playwright", Gerenciador)
+    renderer = PlaywrightRenderer("ua")
+    assert renderer.render("http://x", 5) == "<html>ok</html>"
+    renderer.close()
+    assert eventos == ["context", "browser", "playwright"]
+    assert renderer._playwright is renderer._browser is renderer._context is None
+    assert renderer.render("http://x", 5) == "<html>ok</html>"  # start() de novo funciona

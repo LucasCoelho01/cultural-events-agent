@@ -237,6 +237,79 @@ def test_dedupe_entre_fontes_so_cria_o_vinculo(
     ).fetchone() == (1,)
 
 
+def _vincular_por_duplicata_e_mudar_hash(writer_conn, source_id, city_id, run_id, mapear):
+    parecido = mapear(evento(title="Vamos falar de Agatha Christie!"))
+    primeiro = gravar(
+        writer_conn, source_id, run_id, city_id, parecido, external_id="1", raw_hash="h1"
+    )
+    assert primeiro is Outcome.UNCHANGED
+    novo = mapear(evento(title="Vamos falar de Agatha Christie!", price_min_cents=5))
+    plano = plan_item(
+        writer_conn,
+        source_id=source_id,
+        item=item("1"),
+        raw_hash="h2",
+        mapped=novo,
+        city_id=city_id,
+    )
+    resultado = gravar(
+        writer_conn, source_id, run_id, city_id, novo, external_id="1", raw_hash="h2"
+    )
+    return resultado, plano
+
+
+def _evento_e_vinculo_intactos(admin_conn, source_id):
+    assert admin_conn.execute("SELECT price_min_cents, version FROM event").fetchone() == (10000, 0)
+    assert admin_conn.execute(
+        "SELECT content_hash FROM event_source_link WHERE source_id = %s", (source_id,)
+    ).fetchone() == ("h2",)
+
+
+def test_dedupe_com_evento_admin_nao_e_alterado_quando_o_hash_muda(
+    writer_conn, admin_conn, source_id, outra_fonte, city_id, runs, mapear
+):
+    run_id = runs()
+    gravar(writer_conn, outra_fonte, run_id, city_id, mapear(), external_id="a1")
+    admin_conn.execute("UPDATE event SET origin = 'MANUAL'")
+    admin_conn.execute("DELETE FROM event_source_link")  # o evento do admin não tem vínculo
+    resultado, plano = _vincular_por_duplicata_e_mudar_hash(
+        writer_conn, source_id, city_id, run_id, mapear
+    )
+    assert resultado is Outcome.UNCHANGED and plano == "unchanged"
+    _evento_e_vinculo_intactos(admin_conn, source_id)
+
+
+def test_dedupe_com_evento_de_outra_fonte_nao_e_alterado_quando_o_hash_muda(
+    writer_conn, admin_conn, source_id, outra_fonte, city_id, runs, mapear
+):
+    run_id = runs()
+    gravar(writer_conn, outra_fonte, run_id, city_id, mapear(), external_id="a1")
+    resultado, plano = _vincular_por_duplicata_e_mudar_hash(
+        writer_conn, source_id, city_id, run_id, mapear
+    )
+    assert resultado is Outcome.UNCHANGED and plano == "unchanged"
+    _evento_e_vinculo_intactos(admin_conn, source_id)
+
+
+def test_evento_proprio_continua_sendo_atualizado(
+    writer_conn, admin_conn, source_id, city_id, runs, mapear
+):
+    run_id = runs()
+    gravar(writer_conn, source_id, run_id, city_id, mapear(), external_id="1")
+    novo = mapear(evento(price_min_cents=5))
+    plano = plan_item(
+        writer_conn,
+        source_id=source_id,
+        item=item("1"),
+        raw_hash="h2",
+        mapped=novo,
+        city_id=city_id,
+    )
+    assert plano == "update"
+    assert gravar(writer_conn, source_id, run_id, city_id, novo, raw_hash="h2") is Outcome.UPDATED
+    assert admin_conn.execute("SELECT price_min_cents FROM event").fetchone() == (5,)
+
+
 def test_dedupe_sem_correspondencia_cria(
     writer_conn, admin_conn, source_id, outra_fonte, city_id, runs, mapear
 ):
